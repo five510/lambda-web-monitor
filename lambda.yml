@@ -4,16 +4,32 @@ Description: Lambda Function.
 Parameters:
   LambdaExecutionRole: 
     Type: String
+  ExternalUrls: 
+    Description: External URLs
+    Type: String
+    Default: https://google.com,https://youtube.com
 
 Resources:
   WebMonitor:
     Type: AWS::Lambda::Function
     Properties:
-      Code: src/handler
-      Handler: handler.handler
+      Code: src/handlers
+      Handler: handler.monitor_handler
       Runtime: python3.7
       Timeout: 10
       Role: !Ref LambdaExecutionRole
+  CronMonitor:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code: src/handlers
+      Handler: handler.cron_handler
+      Runtime: python3.7
+      Timeout: 10
+      Role: !Ref LambdaExecutionRole
+      Environment: 
+        Variables:
+          WEB_MONITOR_FUNCTION_ARN: !GetAtt WebMonitor.Arn
+          SSM_PRAMETER_NAME: !Sub '${AWS::StackName}-external-urls'
   LambdaScheduleEvent:
     Type: AWS::Events::Rule
     Properties:
@@ -21,12 +37,19 @@ Resources:
         ScheduleExpression: 'cron(0/1 * * * ? *)'
         State: ENABLED
         Targets:
-          - Arn: !GetAtt WebMonitor.Arn
+          - Arn: !GetAtt CronMonitor.Arn
             Id: ScheduleEvent1Target
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties: 
       Action: lambda:InvokeFunction
-      FunctionName: !Ref WebMonitor
+      FunctionName: !Ref CronMonitor
       Principal: events.amazonaws.com
       SourceArn: !GetAtt LambdaScheduleEvent.Arn
+  SSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Description: External urls
+      Name: !Sub '${AWS::StackName}-external-urls'
+      Type: StringList
+      Value: !Ref ExternalUrls
